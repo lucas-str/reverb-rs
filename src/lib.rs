@@ -1,33 +1,23 @@
+mod comb;
+
 #[macro_use]
 extern crate vst;
 
 use vst::buffer::AudioBuffer;
 use vst::plugin::{Category, HostCallback, Info, Plugin};
 
-mod comb;
+use comb::Comb;
 
 struct Reverb {
     sample_rate: f64,
-    comb1_out: Vec<f32>,
-    comb2_out: Vec<f32>,
-    comb3_out: Vec<f32>,
-    comb4_out: Vec<f32>,
+    comb1: Comb,
+    comb2: Comb,
+    comb3: Comb,
+    comb4: Comb,
     comb_sum: Vec<f32>,
     ap1_output: Vec<f32>,
     ap2_input: Vec<f32>,
     ap2_output: Vec<f32>,
-}
-
-fn comb_filter(input: &[f32], delay: usize, gain: f32, output: &mut Vec<f32>) {
-    let samples = input.len();
-    for sample_idx in 0..samples {
-        let echo = match delay >= output.len() {
-            true => 0.0,
-            false => gain * output[output.len() - delay],
-        };
-        let value = input[sample_idx] + echo;
-        output.push(value);
-    }
 }
 
 fn all_pass_filter(input: &[f32], delay: usize, gain: f32, output: &mut Vec<f32>) {
@@ -50,10 +40,10 @@ impl Plugin for Reverb {
     fn new(_host: HostCallback) -> Self {
         Reverb {
             sample_rate: 44100.0,
-            comb1_out: Vec::new(),
-            comb2_out: Vec::new(),
-            comb3_out: Vec::new(),
-            comb4_out: Vec::new(),
+            comb1: Comb::new(1621, 0.876),
+            comb2: Comb::new(1400, 0.900),
+            comb3: Comb::new(1819, 0.852),
+            comb4: Comb::new(1843, 0.831),
             comb_sum: Vec::new(),
             ap1_output: Vec::new(),
             ap2_input: Vec::new(),
@@ -77,48 +67,19 @@ impl Plugin for Reverb {
         let samples = buffer.samples();
         for (input_buffer, output_buffer) in buffer.zip() {
             /* Comb filters */
-            const COMB1_DELAY: usize = 1621 * 2;
-            const COMB2_DELAY: usize = 1400 * 2;
-            const COMB3_DELAY: usize = 1819 * 2;
-            const COMB4_DELAY: usize = 1843 * 2;
-            const COMB_MULT: f32 = 1.0; // 0.835
-            const COMB1_GAIN: f32 = 0.876 * COMB_MULT; // 0.805
-            const COMB2_GAIN: f32 = 0.900 * COMB_MULT; // 0.827
-            const COMB3_GAIN: f32 = 0.852 * COMB_MULT; // 0.783
-            const COMB4_GAIN: f32 = 0.831 * COMB_MULT; // 0.764
-            comb_filter(input_buffer, COMB1_DELAY, COMB1_GAIN, &mut self.comb1_out);
-            comb_filter(input_buffer, COMB2_DELAY, COMB2_GAIN, &mut self.comb2_out);
-            comb_filter(input_buffer, COMB3_DELAY, COMB3_GAIN, &mut self.comb3_out);
-            comb_filter(input_buffer, COMB4_DELAY, COMB4_GAIN, &mut self.comb4_out);
+            self.comb1.process(input_buffer);
+            self.comb2.process(input_buffer);
+            self.comb3.process(input_buffer);
+            self.comb4.process(input_buffer);
             /* Sum comb filters */
+            let comb1_out = &self.comb1.output;
+            let comb2_out = &self.comb2.output;
+            let comb3_out = &self.comb3.output;
+            let comb4_out = &self.comb4.output;
             self.comb_sum.clear();
-            let c1_len = self.comb1_out.len();
-            let comb1_out = &self.comb1_out[(c1_len - samples)..c1_len];
-            let c2_len = self.comb2_out.len();
-            let comb2_out = &self.comb2_out[(c2_len - samples)..c2_len];
-            let c3_len = self.comb3_out.len();
-            let comb3_out = &self.comb3_out[(c3_len - samples)..c3_len];
-            let c4_len = self.comb4_out.len();
-            let comb4_out = &self.comb4_out[(c4_len - samples)..c4_len];
             for i in 0..samples {
                 self.comb_sum
                     .push((comb1_out[i] + comb2_out[i] + comb3_out[i] + comb4_out[i]) / 4.0);
-            }
-            //for i in 0..samples {
-            //    output_buffer[i] = self.comb_sum[i];
-            //}
-            /* Reduce outputs */
-            if c1_len > COMB1_DELAY {
-                self.comb1_out = self.comb1_out.split_off(c1_len - COMB1_DELAY);
-            }
-            if c2_len > COMB2_DELAY {
-                self.comb2_out = self.comb2_out.split_off(c2_len - COMB2_DELAY);
-            }
-            if c3_len > COMB3_DELAY {
-                self.comb3_out = self.comb3_out.split_off(c3_len - COMB3_DELAY);
-            }
-            if c4_len > COMB4_DELAY {
-                self.comb4_out = self.comb4_out.split_off(c4_len - COMB4_DELAY);
             }
             /* All pass filter */
             const AP1_DELAY: usize = 451;
