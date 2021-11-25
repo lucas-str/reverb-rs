@@ -69,7 +69,6 @@ impl Plugin for Reverb {
             self.ap1.process(&self.comb_sum);
             self.ap2.process(&self.ap1.output);
             for i in 0..samples {
-                //output_buffer[i] = ap2_out[i];
                 output_buffer[i] = self.ap2.output[i];
             }
         }
@@ -85,9 +84,11 @@ plugin_main!(Reverb);
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const SIZE: usize = 2048;
+
     #[test]
-    fn process() {
-        const SIZE: usize = 1024;
+    fn test_dirac() {
         let mut in1 = vec![0.0; SIZE];
         in1[0] = 1.0;
 
@@ -102,5 +103,76 @@ mod tests {
         let mut reverb = Reverb::new(host);
 
         reverb.process(&mut buffer);
+    }
+
+    #[test]
+    fn test_multiple_inputs() {
+        let mut in1 = vec![0.0; SIZE / 2];
+        let in2 = vec![0.0; SIZE / 2];
+        in1[0] = 1.0;
+
+        let mut out1 = vec![0.0; SIZE / 2];
+        let mut out2 = vec![0.0; SIZE / 2];
+
+        let inputs = vec![in1.as_ptr(), in2.as_ptr()];
+        let mut outputs = vec![out1.as_mut_ptr(), out2.as_mut_ptr()];
+        let mut buffer =
+            unsafe { AudioBuffer::from_raw(2, 2, inputs.as_ptr(), outputs.as_mut_ptr(), SIZE / 2) };
+
+        let host: HostCallback = Default::default();
+        let mut reverb = Reverb::new(host);
+
+        reverb.process(&mut buffer);
+    }
+
+    #[test]
+    fn compare_outputs() {
+        // Single input
+        let mut in1 = vec![0.0; SIZE];
+        in1[0] = 1.0;
+
+        let mut out1 = vec![0.0; SIZE];
+
+        let inputs = vec![in1.as_ptr()];
+        let mut outputs = vec![out1.as_mut_ptr()];
+        let mut buffer =
+            unsafe { AudioBuffer::from_raw(1, 1, inputs.as_ptr(), outputs.as_mut_ptr(), SIZE) };
+
+        let host: HostCallback = Default::default();
+        let mut reverb = Reverb::new(host);
+
+        reverb.process(&mut buffer);
+
+        let out_single = out1.clone();
+
+        // Multiple input
+        let mut in1 = vec![0.0; SIZE / 2];
+        let in2 = vec![0.0; SIZE / 2];
+        in1[0] = 1.0;
+
+        let mut out1 = vec![0.0; SIZE / 2];
+        let mut out2 = vec![0.0; SIZE / 2];
+
+        let inputs1 = vec![in1.as_ptr()];
+        let mut outputs1 = vec![out1.as_mut_ptr()];
+        let mut buffer1 = unsafe {
+            AudioBuffer::from_raw(1, 1, inputs1.as_ptr(), outputs1.as_mut_ptr(), SIZE / 2)
+        };
+        let inputs2 = vec![in2.as_ptr()];
+        let mut outputs2 = vec![out2.as_mut_ptr()];
+        let mut buffer2 = unsafe {
+            AudioBuffer::from_raw(1, 1, inputs2.as_ptr(), outputs2.as_mut_ptr(), SIZE / 2)
+        };
+
+        let host: HostCallback = Default::default();
+        let mut reverb = Reverb::new(host);
+
+        reverb.process(&mut buffer1);
+        reverb.process(&mut buffer2);
+
+        let mut out_multiple = out1.clone();
+        out_multiple.append(&mut out2);
+
+        assert_eq!(out_single, out_multiple);
     }
 }
