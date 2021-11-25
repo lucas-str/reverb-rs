@@ -1,3 +1,4 @@
+mod allpass;
 mod comb;
 
 #[macro_use]
@@ -6,6 +7,7 @@ extern crate vst;
 use vst::buffer::AudioBuffer;
 use vst::plugin::{Category, HostCallback, Info, Plugin};
 
+use allpass::AllPass;
 use comb::Comb;
 
 struct Reverb {
@@ -15,25 +17,8 @@ struct Reverb {
     comb3: Comb,
     comb4: Comb,
     comb_sum: Vec<f32>,
-    ap1_output: Vec<f32>,
-    ap2_input: Vec<f32>,
-    ap2_output: Vec<f32>,
-}
-
-fn all_pass_filter(input: &[f32], delay: usize, gain: f32, output: &mut Vec<f32>) {
-    let samples = input.len();
-    for sample_idx in 0..samples {
-        let in_delay = match sample_idx < delay {
-            true => 0.0,
-            false => input[sample_idx - delay],
-        };
-        let out_delay = match delay >= output.len() {
-            true => 0.0,
-            false => gain * output[output.len() - delay],
-        };
-        let value = (-gain * input[sample_idx]) + in_delay + out_delay;
-        output.push(value);
-    }
+    ap1: AllPass,
+    ap2: AllPass,
 }
 
 impl Plugin for Reverb {
@@ -45,9 +30,8 @@ impl Plugin for Reverb {
             comb3: Comb::new(1819, 0.852),
             comb4: Comb::new(1843, 0.831),
             comb_sum: Vec::new(),
-            ap1_output: Vec::new(),
-            ap2_input: Vec::new(),
-            ap2_output: Vec::new(),
+            ap1: AllPass::new(451, 0.7),
+            ap2: AllPass::new(199, 0.7),
         }
     }
 
@@ -82,29 +66,11 @@ impl Plugin for Reverb {
                     .push((comb1_out[i] + comb2_out[i] + comb3_out[i] + comb4_out[i]) / 4.0);
             }
             /* All pass filter */
-            const AP1_DELAY: usize = 451;
-            const AP1_GAIN: f32 = 0.7;
-            const AP2_DELAY: usize = 199;
-            const AP2_GAIN: f32 = 0.7;
-            all_pass_filter(&self.comb_sum, AP1_DELAY, AP1_GAIN, &mut self.ap1_output);
-            self.ap2_input.clear();
-            let ap1_len = self.ap1_output.len();
-            for sample_idx in (ap1_len - samples)..ap1_len {
-                self.ap2_input.push(self.ap1_output[sample_idx]);
-            }
-            all_pass_filter(&self.ap2_input, AP2_DELAY, AP2_GAIN, &mut self.ap2_output);
-
-            let ap2_len = self.ap2_output.len();
-            let ap2_out = &self.ap2_output[(ap2_len - samples)..ap2_len];
+            self.ap1.process(&self.comb_sum);
+            self.ap2.process(&self.ap1.output);
             for i in 0..samples {
-                output_buffer[i] = ap2_out[i];
-            }
-
-            if ap1_len > AP1_DELAY {
-                self.ap1_output = self.ap1_output.split_off(ap1_len - AP1_DELAY);
-            }
-            if ap2_len > AP2_DELAY {
-                self.ap2_output = self.ap2_output.split_off(ap2_len - AP2_DELAY);
+                //output_buffer[i] = ap2_out[i];
+                output_buffer[i] = self.ap2.output[i];
             }
         }
     }
