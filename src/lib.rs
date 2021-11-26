@@ -47,6 +47,22 @@ impl Plugin for Reverb {
         }
     }
 
+    /// The input is passed into 4 Comb filters. The Comb filters outputs are
+    /// summed and passed to the first AllPass filter, which output is passed
+    /// to the second AllPass filter.
+    ///                 +-----+
+    ///              +->|comb1|--+
+    ///              |  +-----+  |
+    ///              |  +-----+  |
+    ///              |->|comb2|--|  +---+   +--------+   +--------+
+    ///      input --+  +-----+  +->| + |-->|AllPass1|-->|AllPass2|--> output
+    ///              |  +-----+  |  +---+   +--------+   +--------+
+    ///              |->|comb3|--|
+    ///              |  +-----+  |
+    ///              |  +-----+  |
+    ///              +->|comb4|--+
+    ///                 +-----+
+    ///
     fn process(&mut self, buffer: &mut AudioBuffer<f32>) {
         let samples = buffer.samples();
         for (input_buffer, output_buffer) in buffer.zip() {

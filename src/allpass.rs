@@ -19,6 +19,7 @@ impl AllPass {
         }
     }
 
+    /// output[i] = -(gain * input[i]) + input[i - delay] + (gain * output[i - delay])
     pub fn process(&mut self, input: &[f32]) {
         let samples = input.len();
         self.output.clear();
