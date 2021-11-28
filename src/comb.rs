@@ -1,5 +1,3 @@
-use std::cmp;
-
 pub struct Comb {
     pub output: Vec<f32>,
     delay: usize,
@@ -17,30 +15,30 @@ impl Comb {
         }
     }
 
+    fn update_prev_output(&mut self) {
+        let prev_output_len = self.prev_output.len();
+        if prev_output_len > self.delay {
+            self.prev_output = self.prev_output.split_off(prev_output_len - self.delay);
+        }
+    }
+
     /// output[i] = input[i] + (gain * output[i - delay])
     pub fn process(&mut self, input: &[f32]) {
         let samples = input.len();
         self.output.clear();
-        let mut offset = 0;
         for i in 0..samples {
             let echo = if self.delay > self.prev_output.len() {
-                self.prev_output.push(0.0);
-                offset += 1;
                 0.0
             } else if i < self.delay {
-                self.gain * self.prev_output[self.prev_output.len() - self.delay + i - offset]
+                self.gain * self.prev_output[self.prev_output.len() - self.delay]
             } else {
                 self.gain * self.output[i - self.delay]
             };
             let value = input[i] + echo;
             self.output.push(value);
+            self.prev_output.push(value);
         }
-        self.prev_output.clear();
-        let delay = cmp::min(self.delay, self.output.len());
-        let i = cmp::max((self.output.len() - delay) as i32, 0) as usize;
-        for sample in self.output[i..].iter() {
-            self.prev_output.push(*sample);
-        }
+        self.update_prev_output();
     }
 }
 
@@ -105,33 +103,59 @@ mod test {
         assert_eq!(expected2, out2);
     }
 
-    #[test]
-    fn compare_comb_outputs() {
-        const SIZE: usize = 100;
-        const DELAY: usize = SIZE / 2 + 1;
+    fn compare_comb_outputs(size: usize, sample_size: usize, delay: usize) {
+        let mut input = vec![0.0; size];
+        input[0] = 1.0;
 
         // Single input
-        let mut comb = Comb::new(DELAY, 0.5);
-
-        let mut in1 = vec![0.0; SIZE];
-        in1[0] = 1.0;
-
-        comb.process(&in1);
-
+        let mut comb = Comb::new(delay, 0.5);
+        comb.process(&input);
         let out_single = comb.output.clone();
 
-        // Multiple inputs
-        let mut comb = Comb::new(DELAY, 0.5);
+        // Sampled inputs
+        let mut comb = Comb::new(delay, 0.5);
 
-        let mut in1 = vec![0.0; SIZE / 2];
-        let in2 = vec![0.0; SIZE / 2];
-        in1[0] = 1.0;
+        let mut i = 0;
+        let mut output_sampled = Vec::new();
+        while i < size {
+            let in_sampled = if i + sample_size < size {
+                &input[i..i + sample_size]
+            } else {
+                &input[i..]
+            };
+            i += sample_size;
+            comb.process(&in_sampled);
+            output_sampled.append(&mut comb.output);
+        }
+        for i in 0..size {
+            if out_single[i] != output_sampled[i] {
+                println!("{}: {} != {}", i, out_single[i], output_sampled[i]);
+            }
+        }
+        assert_eq!(out_single, output_sampled);
+    }
 
-        comb.process(&in1);
-        let mut out_multiple = comb.output.clone();
-        comb.process(&in2);
-        out_multiple.append(&mut comb.output);
+    #[test]
+    fn compare_comb_outputs_delay_lt_sample() {
+        const SIZE: usize = 100;
+        const SAMPLE_SIZE: usize = 10;
+        const DELAY: usize = 4;
+        compare_comb_outputs(SIZE, SAMPLE_SIZE, DELAY);
+    }
 
-        assert_eq!(out_single, out_multiple);
+    #[test]
+    fn compare_comb_outputs_delay_eq_sample() {
+        const SIZE: usize = 100;
+        const SAMPLE_SIZE: usize = 10;
+        const DELAY: usize = 10;
+        compare_comb_outputs(SIZE, SAMPLE_SIZE, DELAY);
+    }
+
+    #[test]
+    fn compare_comb_outputs_delay_gt_sample() {
+        const SIZE: usize = 100;
+        const SAMPLE_SIZE: usize = 5;
+        const DELAY: usize = 11;
+        compare_comb_outputs(SIZE, SAMPLE_SIZE, DELAY);
     }
 }

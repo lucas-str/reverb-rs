@@ -92,6 +92,13 @@ impl Plugin for Reverb {
 
     fn set_sample_rate(&mut self, rate: f32) {
         self.sample_rate = f64::from(rate);
+        let factor = (self.sample_rate / 44100.0) as usize;
+        self.comb1 = Comb::new(1621 * factor, 0.876);
+        self.comb2 = Comb::new(1400 * factor, 0.900);
+        self.comb3 = Comb::new(1819 * factor, 0.852);
+        self.comb4 = Comb::new(1843 * factor, 0.831);
+        self.ap1 = AllPass::new(451 * factor, 0.7);
+        self.ap2 = AllPass::new(199 * factor, 0.7);
     }
 }
 
@@ -101,7 +108,7 @@ plugin_main!(Reverb);
 mod tests {
     use super::*;
 
-    const SIZE: usize = 2048;
+    const SIZE: usize = 44100;
 
     #[test]
     fn test_dirac() {
@@ -161,33 +168,37 @@ mod tests {
 
         let out_single = out1.clone();
 
-        // Multiple input
-        let mut in1 = vec![0.0; SIZE / 2];
-        let in2 = vec![0.0; SIZE / 2];
-        in1[0] = 1.0;
-
-        let mut out1 = vec![0.0; SIZE / 2];
-        let mut out2 = vec![0.0; SIZE / 2];
-
-        let inputs1 = vec![in1.as_ptr()];
-        let mut outputs1 = vec![out1.as_mut_ptr()];
-        let mut buffer1 = unsafe {
-            AudioBuffer::from_raw(1, 1, inputs1.as_ptr(), outputs1.as_mut_ptr(), SIZE / 2)
-        };
-        let inputs2 = vec![in2.as_ptr()];
-        let mut outputs2 = vec![out2.as_mut_ptr()];
-        let mut buffer2 = unsafe {
-            AudioBuffer::from_raw(1, 1, inputs2.as_ptr(), outputs2.as_mut_ptr(), SIZE / 2)
-        };
-
+        // Sampled input
         let host: HostCallback = Default::default();
         let mut reverb = Reverb::new(host);
-
-        reverb.process(&mut buffer1);
-        reverb.process(&mut buffer2);
-
-        let mut out_multiple = out1.clone();
-        out_multiple.append(&mut out2);
+        let mut i = 0;
+        let mut out_sample = Vec::new();
+        let mut out_multiple = Vec::new();
+        const SAMPLE_SIZE: usize = 1024;
+        while i < in1.len() {
+            let in_sample = if i + SAMPLE_SIZE < in1.len() {
+                &in1[i..i + SAMPLE_SIZE]
+            } else {
+                &in1[i..]
+            };
+            i += SAMPLE_SIZE;
+            for _ in 0..in_sample.len() {
+                out_sample.push(0.0);
+            }
+            let input_sample = vec![in_sample.as_ptr()];
+            let mut output_sample = vec![out_sample.as_mut_ptr()];
+            let mut buffer = unsafe {
+                AudioBuffer::from_raw(
+                    1,
+                    1,
+                    input_sample.as_ptr(),
+                    output_sample.as_mut_ptr(),
+                    in_sample.len(),
+                )
+            };
+            reverb.process(&mut buffer);
+            out_multiple.append(&mut out_sample);
+        }
 
         assert_eq!(out_single, out_multiple);
     }
