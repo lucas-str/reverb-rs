@@ -2,7 +2,7 @@ pub struct Comb {
     pub output: Vec<f32>,
     delay: usize,
     gain: f32,
-    prev_output: Vec<f32>,
+    prev_output: Vec<Vec<f32>>,
 }
 
 impl Comb {
@@ -15,30 +15,36 @@ impl Comb {
         }
     }
 
-    fn update_prev_output(&mut self) {
-        let prev_output_len = self.prev_output.len();
-        if prev_output_len > self.delay {
-            self.prev_output = self.prev_output.split_off(prev_output_len - self.delay);
+    fn update_prev_output(&mut self, chan: usize) {
+        let prev_output = &mut self.prev_output[chan as usize];
+        let len = prev_output.len();
+        if len > self.delay {
+            self.prev_output[chan] = prev_output.split_off(len - self.delay);
         }
     }
 
     /// output[i] = input[i] + (gain * output[i - delay])
-    pub fn process(&mut self, input: &[f32]) {
+    pub fn process(&mut self, input: &[f32], chan: u8) {
         let samples = input.len();
         self.output.clear();
+        let chan = chan as usize;
+        if chan > self.prev_output.len() {
+            panic!("channel {} out of bound", chan);
+        } else if chan == self.prev_output.len() {
+            self.prev_output.push(Vec::new());
+        }
+        let prev_output = &mut self.prev_output[chan];
         for i in 0..samples {
-            let echo = if self.delay > self.prev_output.len() {
+            let echo = if self.delay > prev_output.len() {
                 0.0
-            } else if i < self.delay {
-                self.gain * self.prev_output[self.prev_output.len() - self.delay]
             } else {
-                self.gain * self.output[i - self.delay]
+                self.gain * prev_output[prev_output.len() - self.delay]
             };
             let value = input[i] + echo;
             self.output.push(value);
-            self.prev_output.push(value);
+            prev_output.push(value);
         }
-        self.update_prev_output();
+        self.update_prev_output(chan);
     }
 }
 
@@ -54,7 +60,7 @@ mod test {
         let mut in1 = vec![0.0; SIZE];
         in1[0] = 1.0;
 
-        comb.process(&in1);
+        comb.process(&in1, 0);
 
         let expected = vec![1.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.25, 0.0, 0.0, 0.125];
 
@@ -70,9 +76,9 @@ mod test {
         let in2 = vec![0.0; SIZE];
         in1[0] = 1.0;
 
-        comb.process(&in1);
+        comb.process(&in1, 0);
         let out1 = comb.output.clone();
-        comb.process(&in2);
+        comb.process(&in2, 0);
         let out2 = comb.output.clone();
 
         let expected1 = vec![1.0, 0.0, 0.0, 0.5, 0.0];
@@ -91,9 +97,9 @@ mod test {
         let in2 = vec![0.0; SIZE];
         in1[0] = 1.0;
 
-        comb.process(&in1);
+        comb.process(&in1, 0);
         let out1 = comb.output.clone();
-        comb.process(&in2);
+        comb.process(&in2, 0);
         let out2 = comb.output.clone();
 
         let expected1 = vec![1.0, 0.0, 0.0, 0.0, 0.0];
@@ -109,7 +115,7 @@ mod test {
 
         // Single input
         let mut comb = Comb::new(delay, 0.5);
-        comb.process(&input);
+        comb.process(&input, 0);
         let out_single = comb.output.clone();
 
         // Sampled inputs
@@ -124,7 +130,7 @@ mod test {
                 &input[i..]
             };
             i += sample_size;
-            comb.process(&in_sampled);
+            comb.process(&in_sampled, 0);
             output_sampled.append(&mut comb.output);
         }
         for i in 0..size {
@@ -154,8 +160,8 @@ mod test {
     #[test]
     fn compare_comb_outputs_delay_gt_sample() {
         const SIZE: usize = 100;
-        const SAMPLE_SIZE: usize = 5;
-        const DELAY: usize = 11;
+        const SAMPLE_SIZE: usize = 10;
+        const DELAY: usize = 21;
         compare_comb_outputs(SIZE, SAMPLE_SIZE, DELAY);
     }
 }

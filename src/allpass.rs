@@ -2,8 +2,8 @@ pub struct AllPass {
     pub output: Vec<f32>,
     delay: usize,
     gain: f32,
-    prev_input: Vec<f32>,
-    prev_output: Vec<f32>,
+    prev_input: Vec<Vec<f32>>,
+    prev_output: Vec<Vec<f32>>,
 }
 
 impl AllPass {
@@ -17,42 +17,49 @@ impl AllPass {
         }
     }
 
-    fn update_prev_inout(&mut self) {
-        let prev_input_len = self.prev_input.len();
+    fn update_prev_inout(&mut self, chan: usize) {
+        let prev_input = &mut self.prev_input[chan];
+        let prev_input_len = prev_input.len();
         if prev_input_len > self.delay {
-            self.prev_input = self.prev_input.split_off(prev_input_len - self.delay);
+            self.prev_input[chan] = prev_input.split_off(prev_input_len - self.delay);
         }
-        let prev_output_len = self.prev_output.len();
+        let prev_output = &mut self.prev_output[chan];
+        let prev_output_len = prev_output.len();
         if prev_output_len > self.delay {
-            self.prev_output = self.prev_output.split_off(prev_output_len - self.delay);
+            self.prev_output[chan] = prev_output.split_off(prev_output_len - self.delay);
         }
     }
 
     /// output[i] = -(gain * input[i]) + input[i - delay] + (gain * output[i - delay])
-    pub fn process(&mut self, input: &[f32]) {
+    pub fn process(&mut self, input: &[f32], chan: u8) {
         let samples = input.len();
         self.output.clear();
+        let chan = chan as usize;
+        if chan > self.prev_output.len() {
+            panic!("channel {} out of bound", chan);
+        } else if chan == self.prev_output.len() {
+            self.prev_output.push(Vec::new());
+            self.prev_input.push(Vec::new());
+        }
+        let prev_input = &mut self.prev_input[chan];
+        let prev_output = &mut self.prev_output[chan];
         for i in 0..samples {
-            let in_delay = if self.delay > self.prev_input.len() {
+            let in_delay = if self.delay > prev_input.len() {
                 0.0
-            } else if i < self.delay {
-                self.prev_input[self.prev_input.len() - self.delay]
             } else {
-                input[i - self.delay]
+                prev_input[prev_input.len() - self.delay]
             };
-            let out_delay = if self.delay > self.prev_output.len() {
+            let out_delay = if self.delay > prev_output.len() {
                 0.0
-            } else if i < self.delay {
-                self.gain * self.prev_output[self.prev_output.len() - self.delay]
             } else {
-                self.gain * self.output[i - self.delay]
+                self.gain * prev_output[prev_output.len() - self.delay]
             };
             let value = (-self.gain * input[i]) + in_delay + out_delay;
             self.output.push(value);
-            self.prev_output.push(value);
-            self.prev_input.push(input[i]);
+            prev_output.push(value);
+            prev_input.push(input[i]);
         }
-        self.update_prev_inout();
+        self.update_prev_inout(chan);
     }
 }
 
@@ -68,7 +75,7 @@ mod test {
         let mut in1 = vec![0.0; SIZE];
         in1[0] = 1.0;
 
-        allpass.process(&in1);
+        allpass.process(&in1, 0);
 
         let expected = vec![-0.5, 0.0, 0.0, 0.75, 0.0, 0.0, 0.375, 0.0, 0.0, 0.1875];
 
@@ -84,9 +91,9 @@ mod test {
         let in2 = vec![0.0; SIZE];
         in1[0] = 1.0;
 
-        allpass.process(&in1);
+        allpass.process(&in1, 0);
         let out1 = allpass.output.clone();
-        allpass.process(&in2);
+        allpass.process(&in2, 0);
         let out2 = allpass.output.clone();
 
         let expected1 = vec![-0.5, 0.0, 0.0, 0.75, 0.0];
@@ -102,7 +109,7 @@ mod test {
 
         // Single input
         let mut allpass = AllPass::new(delay, 0.5);
-        allpass.process(&input);
+        allpass.process(&input, 0);
         let out_single = allpass.output.clone();
 
         // Multiple inputs
@@ -117,7 +124,7 @@ mod test {
                 &input[i..]
             };
             i += sample_size;
-            allpass.process(&in_sampled);
+            allpass.process(&in_sampled, 0);
             output_sampled.append(&mut allpass.output);
         }
         for i in 0..size {
@@ -147,8 +154,8 @@ mod test {
     #[test]
     fn compare_allpass_outputs_delay_gt_sample() {
         const SIZE: usize = 100;
-        const SAMPLE_SIZE: usize = 5;
-        const DELAY: usize = 11;
+        const SAMPLE_SIZE: usize = 10;
+        const DELAY: usize = 21;
         compare_allpass_outputs(SIZE, SAMPLE_SIZE, DELAY);
     }
 }
