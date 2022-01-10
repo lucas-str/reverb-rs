@@ -65,8 +65,8 @@ impl Plugin for Reverb {
     ///
     fn process(&mut self, buffer: &mut AudioBuffer<f32>) {
         let samples = buffer.samples();
-        let mut chan = 0;
-        for (input_buffer, output_buffer) in buffer.zip() {
+        for (chan, (input_buffer, output_buffer)) in buffer.zip().enumerate() {
+            let chan = chan as u8;
             /* Comb filters */
             self.comb1.process(input_buffer, chan);
             self.comb2.process(input_buffer, chan);
@@ -85,10 +85,7 @@ impl Plugin for Reverb {
             /* All pass filter */
             self.ap1.process(&self.comb_sum, chan);
             self.ap2.process(&self.ap1.output, chan);
-            for i in 0..samples {
-                output_buffer[i] = self.ap2.output[i];
-            }
-            chan += 1;
+            output_buffer[..samples].clone_from_slice(&self.ap2.output[..samples]);
         }
     }
 

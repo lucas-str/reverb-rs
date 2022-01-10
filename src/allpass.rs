@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 pub struct AllPass {
     pub output: Vec<f32>,
     delay: usize,
@@ -35,15 +37,17 @@ impl AllPass {
         let samples = input.len();
         self.output.clear();
         let chan = chan as usize;
-        if chan > self.prev_output.len() {
-            panic!("channel {} out of bound", chan);
-        } else if chan == self.prev_output.len() {
-            self.prev_output.push(Vec::new());
-            self.prev_input.push(Vec::new());
+        match chan.cmp(&self.prev_output.len()) {
+            Ordering::Greater => panic!("channel {} out of bound", chan),
+            Ordering::Equal => {
+                self.prev_output.push(Vec::new());
+                self.prev_input.push(Vec::new());
+            }
+            Ordering::Less => {}
         }
         let prev_input = &mut self.prev_input[chan];
         let prev_output = &mut self.prev_output[chan];
-        for i in 0..samples {
+        for sample in input.iter().take(samples) {
             let in_delay = if self.delay > prev_input.len() {
                 0.0
             } else {
@@ -54,10 +58,10 @@ impl AllPass {
             } else {
                 self.gain * prev_output[prev_output.len() - self.delay]
             };
-            let value = (-self.gain * input[i]) + in_delay + out_delay;
+            let value = (-self.gain * sample) + in_delay + out_delay;
             self.output.push(value);
             prev_output.push(value);
-            prev_input.push(input[i]);
+            prev_input.push(*sample);
         }
         self.update_prev_inout(chan);
     }

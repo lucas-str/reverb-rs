@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 pub struct Comb {
     pub output: Vec<f32>,
     delay: usize,
@@ -28,19 +30,19 @@ impl Comb {
         let samples = input.len();
         self.output.clear();
         let chan = chan as usize;
-        if chan > self.prev_output.len() {
-            panic!("channel {} out of bound", chan);
-        } else if chan == self.prev_output.len() {
-            self.prev_output.push(Vec::new());
+        match chan.cmp(&self.prev_output.len()) {
+            Ordering::Greater => panic!("channel {} out of bound", chan),
+            Ordering::Equal => self.prev_output.push(Vec::new()),
+            Ordering::Less => {}
         }
         let prev_output = &mut self.prev_output[chan];
-        for i in 0..samples {
+        for sample in input.iter().take(samples) {
             let echo = if self.delay > prev_output.len() {
                 0.0
             } else {
                 self.gain * prev_output[prev_output.len() - self.delay]
             };
-            let value = input[i] + echo;
+            let value = sample + echo;
             self.output.push(value);
             prev_output.push(value);
         }
